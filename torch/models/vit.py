@@ -57,6 +57,20 @@ class PatchEmbedConv(torch.nn.Module):
         return self.conv(x).flatten(start_dim=-2, end_dim=-1).swapdims(-1, -2)
 
 
+class PositionEmbed(torch.nn.Module):
+    def __init__(self, seq_len: int, embedding_dim: int):
+        self.seq_len = seq_len
+        self.embedding_dim = embedding_dim
+
+        self.embedding = torch.nn.Parameter(
+            torch.empty((self.seq_len + 1, self.embedding_dim))
+        )
+        torch.nn.init.xavier_normal_(self.embedding)
+
+    def forward(self, x):
+        return self.embedding
+
+
 class AttentionBlock(torch.nn.Module):
     def __init__(self):
         super().__init__()
