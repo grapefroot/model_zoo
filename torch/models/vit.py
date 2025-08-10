@@ -6,30 +6,55 @@ class PatchedEmbed(torch.nn.Module):
     # layer that is responsible for patching
     # patching is done through the unfold + linear
 
-    def __init__(self, patch_h: int, patch_w: int, patch_ch: int, embedding_dim: int):
+    def __init__(
+        self, patch_h: int, patch_w: int, in_channels: int, embedding_dim: int
+    ):
         super().__init__()
 
+        self.patch_h = patch_h
+        self.patch_w = patch_w
+        self.in_channels = in_channels
+        self.embedding_dim = embedding_dim
+
         self.unfold = torch.nn.Unfold(
-            kernel_size=(patch_h, patch_w), stride=(patch_h, patch_w)
+            kernel_size=(self.patch_h, self.patch_w),
+            stride=(self.patch_h, self.patch_w),
         )
 
-        self.projection = torch.nn.Linear(patch_ch * patch_h * patch_w, embedding_dim)
+        self.projection = torch.nn.Linear(
+            self.in_channels * self.patch_h * self.patch_w, self.embedding_dim
+        )
 
     def forward(self, x):
         patches = self.unfold(x).swapdims(-1, -2)
         return self.projection(patches)
 
 
-class ConvPatchEmbed(torch.nn.Module):
+class PatchEmbedConv(torch.nn.Module):
 
     # layer that is responsible for patching
     # patching is done through the convolution operation
 
-    def __init__(self):
+    def __init__(
+        self, patch_h: int, patch_w: int, in_channels: int, embedding_dim: int
+    ):
         super().__init__()
 
+        self.patch_h = patch_h
+        self.patch_w = patch_w
+        self.in_channels = in_channels
+        self.embedding_dim = embedding_dim
+
+        self.conv = torch.nn.Conv2d(
+            self.in_channels,
+            self.embedding_dim,
+            kernel_size=(self.patch_h, self.patch_w),
+            stride=(self.patch_h, self.patch_w),
+            padding=0,
+        )
+
     def forward(self, x):
-        pass
+        return self.conv(x).flatten(start_dim=-2, end_dim=-1).swapdims(-1, -2)
 
 
 class AttentionBlock(torch.nn.Module):
