@@ -72,11 +72,48 @@ class PositionEmbed(torch.nn.Module):
 
 
 class AttentionBlock(torch.nn.Module):
-    def __init__(self):
+
+    # inspired by https://docs.pytorch.org/tutorials/intermediate/scaled_dot_product_attention_tutorial.html
+    # https://einops.rocks/pytorch-examples.html
+
+    def __init__(self, embedding_dim: int, n_heads: int, dropout: float = 0.0):
         super().__init__()
 
-    def forward(self, x):
-        pass
+        self.embedding_dim = embedding_dim
+        self.n_heads = n_heads
+        self.dropout = dropout
+
+        self.qkv = torch.nn.Linear(self.embedding_dim, 3 * self.embedding_dim)
+        self.res_dropout = torch.nn.Dropout(dropout)
+        self.out_proj = torch.nn.Linear(self.embedding_dim, self.embedding_dim)
+
+    def forward(self, x: torch.Tensor):
+        q, k, v = self.qkv(x).chunk(3, -1)
+
+        batch_size = x.size(0)
+        embed_dim = x.size(-1)
+        head_dim = embed_dim // self.n_heads
+
+        # sdpa expects input shape n, ..., num_heads, seq_len, head_dim
+        q = q.view(batch_size, -1, self.n_heads, head_dim).transpose(1, 2)
+        k = k.view(batch_size, -1, self.n_heads, head_dim).transpose(1, 2)
+        v = v.view(batch_size, -1, self.n_heads, head_dim).transpose(1, 2)
+
+        if self.training:
+            dropout = self.dropout
+        else:
+            dropout = 0.0
+
+        attn_output = (
+            torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, attn_mask=None, dropout_p=dropout, is_causal=False
+            ).transpose(1, 2)
+            # if dropout is bigger than zero then we need contiguous() here or the next view is going to fail
+            .contiguous()
+        )
+
+        out_projected = self.out_proj(attn_output.view(batch_size, -1, embed_dim))
+        return self.res_dropout(out_projected)
 
 
 class MLPBlock(torch.nn.Module):
