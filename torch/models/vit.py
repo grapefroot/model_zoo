@@ -1,3 +1,4 @@
+from typing import Tuple
 import torch
 
 
@@ -169,7 +170,7 @@ class ViTBlock(torch.nn.Module):
             self.embedding_dim, self.embedding_out, self.mlp_hidden, self.dropout
         )
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         attn_res = self.attn(self.ln1(x)) + x
         mlp_output = self.mlp(self.ln2(attn_res))
         return attn_res + mlp_output
@@ -179,11 +180,65 @@ class ViT(torch.nn.Module):
 
     # n blocks and preprocess and postprocess
 
-    def __init__(self):
+    def __init__(
+        self,
+        patch_h: int,
+        patch_w: int,
+        in_channels: int,
+        embedding_dim: int,
+        n_blocks: int,
+        n_heads: int,
+        dropout: float,
+        mlp_hidden: int,
+    ):
         super().__init__()
 
-    def forward(self, x):
-        pass
+        self.patch_h = patch_h
+        self.patch_w = patch_w
+        self.in_channels = in_channels
+        self.embedding_dim = embedding_dim
+        self.n_blocks = n_blocks
+        self.n_heads = n_heads
+        self.dropout = dropout
+        self.mlp_hidden = mlp_hidden
 
-        # plan
-        # x -> create patches -> embed -> multihead -> feedforward -> output -> sort of
+        self.patcher = PatchEmbedConv(
+            self.patch_h, self.patch_w, self.in_channels, self.embedding_dim
+        )
+
+        self.cls_token = torch.nn.Parameter(torch.empty(self.embedding_dim))
+        torch.nn.init.normal_(self.cls_token)
+
+        self.blocks = torch.nn.ModuleList(
+            [
+                ViTBlock(
+                    self.embedding_dim,
+                    self.n_heads,
+                    self.dropout,
+                    self.mlp_hidden,
+                    self.embedding_dim,
+                )
+                for _ in range(self.n_blocks)
+            ]
+        )
+
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
+        # input is like (batch_size, n_channels, h, w)
+        # we are going to return (cls, )
+        batch_size = x.size(0)
+        patched_input = self.patcher(x)
+
+
+        patched_with_cls = torch.cat(
+            (self.cls_token.expand(batch_size, 1, -1), patched_input), dim=1
+        )
+
+        transformed = patched_with_cls
+
+        for i in range(self.n_blocks):
+            transformed = self.blocks[i](transformed)
+
+        cls = transformed[:, -1, :]
+        transformed_seq = transformed[:, :patched_input.size(1), :]
+
+        return cls, transformed_seq
